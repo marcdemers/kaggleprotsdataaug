@@ -18,6 +18,7 @@ import random
 from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split
 import PIL
+import time
 path_local = 'all/'
 path_drive = '/media/marc/"Expansion Drive"/KaggleProtsData/train_full_size/'
 path_drive_test = '/media/marc/"Expansion Drive"/KaggleProtsData/test_full_size/'
@@ -36,27 +37,19 @@ class TrainProtsDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.prots_df_all = pd.read_csv(path_local + 'train.csv')
+        self.prots_df = pd.read_csv(path_local + 'train.csv')
         percent = 0.8  # default .95
-        # print(self.prots_df)
-
-
-        # self.prots_df = X_train
-        # self.validation_df = X_val
-        # print(self.validation_df)
+        train = Counter()
+        for i, ii in self.prots_df.iterrows():
+            train.update(ii['Target'].split())
 
         good_val = False
         idx = 0
         while good_val is False:
             idx += 1
             good_val = True
-            self.prots_df = self.prots_df_all.sample(frac=1)
-            self.prots_df, self.validation_df = train_test_split(self.prots_df_all, train_size=percent, shuffle=True, random_state=42)
-            print(len(self.prots_df), len(self.validation_df))
-            train = Counter()
-            for i, ii in self.prots_df.iterrows():
-                train.update(ii['Target'].split())
-
+            self.prots_df = self.prots_df.sample(frac=1)
+            self.validation_df = self.prots_df[int(percent * len(self.prots_df)):]
             val = Counter()
             for i, ii in self.validation_df.iterrows():
 
@@ -66,15 +59,14 @@ class TrainProtsDataset(Dataset):
                 if val[str(i)] == 0:
                     good_val = False
                 val_ratio = val[str(i)] / len(self.validation_df)
-                train_ratio = train[str(i)] / int(len(self.prots_df))
+                train_ratio = train[str(i)] / int(percent * len(self.prots_df))
 
-                if ((1 / 1.9) < val_ratio / train_ratio < 1.9) is False:
+                if ((1 / 1.75) < val_ratio / train_ratio < 1.75) is False:
                     good_val = False
                 # print(val_ratio / train_ratio, (1 / 1.75) < val_ratio / train_ratio < 1.75, good_val)
-            print("clear")
 
         self.validation_df.to_csv('validation.csv', index=False)
-        #self.prots_df = self.prots_df[:int(percent * len(self.prots_df))]
+        self.prots_df = self.prots_df[:int(percent * len(self.prots_df))]
 
         self.oversampling(oversampling)
 
@@ -91,10 +83,13 @@ class TrainProtsDataset(Dataset):
         # print("----")
         # print(pd.DataFrame.sample(self.prots_df))
         # print(pd.DataFrame.sample(self.prots_df).values.tolist())
-    def data_augHconcat(self, img1, img1_labels):#, img2, img2_labels):
-        img2, img2_labels = self.sample_second_image(normalize=False)
+    def data_augHconcat(self, img1, img1_labels, normalize=False):#, img2, img2_labels):
+        img2, img2_labels = self.sample_second_image(normalize)
+        if normalize == True:
+            img1 = np.asarray(img1 - np.mean(img1, axis=(1, 2), keepdims=True), dtype=np.uint8)
+
         # img1, img2 :already numpy array
-        x = np.random.beta(0.9,0.9)
+        x = np.random.beta(1,1)
         r = 1 - x
         # print("r", r)
         # img1 = img1 - np.mean(img1, axis=(0,1))
@@ -127,12 +122,14 @@ class TrainProtsDataset(Dataset):
 
         return img_mixed, mixed_img_labels
 
-    def data_augVconcat(self, img1, img1_labels):#, img2, img2_labels):
+    def data_augVconcat(self, img1, img1_labels,normalize=False):#, img2, img2_labels):
         # print("H concat")
         # img1, img2 :already numpy array
-        img2, img2_labels = self.sample_second_image(normalize=False)
+        img2, img2_labels = self.sample_second_image(normalize)
+        if normalize == True:
+            img1 = np.asarray(img1 - np.mean(img1, axis=(1, 2), keepdims=True), dtype=np.uint8)
         #r is the mixing ratio on the first image ; r=0: only img2, r=1: only img1
-        x = np.random.beta(0.9,0.9)
+        x = np.random.beta(1, 1)
         r=1-x
         # r=1
         # print("r", r)
@@ -153,7 +150,6 @@ class TrainProtsDataset(Dataset):
         mixed_img_labels = img1_labels * r
 
         for i, item in enumerate(img2_labels):  # img2_labels is a list
-            print(i, item)
             if mixed_img_labels[item] == 0:
                 mixed_img_labels[item] = 1 - r
             else:
@@ -170,61 +166,30 @@ class TrainProtsDataset(Dataset):
 
     def data_Mixup_two_images(self, img1, img1_labels, img2, img2_labels):  # mixes image2 into image1
         # with probability r
-        x = np.random.beta(0.9,0.9)
-        r=1-x
-        img_mixed = r * img1 + (1 - r) * img2
+        r = np.random.beta(0.9, 0.9)
+        img_mixed = np.asarray(r * img1 + (1 - r) * img2, dtype=np.uint8)
         # print(img2_labels_list)
-        ##labels
-        mixed_img_labels = img1_labels * r
-        # print(mixed_img_labels)
 
-        for i, item in enumerate(img2_labels):  # img2_labels is a list
-            item = int(item.item())
-            if mixed_img_labels[item] == 0:
-                mixed_img_labels[item] = 1 - r
-            else:
-                if (1 - r) + mixed_img_labels[item] <= 1:
-                    mixed_img_labels[item] = (1 - r) + mixed_img_labels[item]
-                else:
-                    mixed_img_labels[item] = 1
+        #labels
+        mixed_img_labels = img1_labels * r + (1-r) * img2_labels
 
         return img_mixed, mixed_img_labels
 
     def data_augBC(self, img1, img1_labels, img2, img2_labels):  # mixes image2 into image1
+        ##IMAGES MUST COME NORMALIZED!! (mean substracted)
         # mix the images with BC+
-        # print(img2.shape)
-        # print(img1.shape)
-
         # with probability p
-        r = np.random.uniform() #uniform for BC+
-        # print(r)
+        r = np.random.beta(1, 1)#uniform for BC+
+
+
         sigma1 = np.std(img1, axis=(1, 2), keepdims=True)
         sigma2 = np.std(img2, axis=(1, 2), keepdims=True)
-        p = 1 / (1 + sigma1 * (1 - r) / sigma2 / r)
-        # print(p)
-        # print((img1- np.mean(img1, axis=(0,1))))
-        img_mixed = (p * img1 + (1 - p) * img2) / (np.sqrt(p ** 2 + (1 - p) ** 2))
-        # print(img_mixed.shape)
-        # print(img1[3][5])
-        # print(img_mixed[3][5])
+        p = 1 / (1 + sigma1 * (1 - r) / (sigma2 * r))
+        img_mixed = np.asarray( (p * img1 + (1 - p) * img2) / (np.sqrt(p ** 2 + (1 - p) ** 2)) , dtype=np.uint8)
+        # labels
+        label_mixing_coef = np.mean(p)
+        mixed_img_labels = img1_labels * label_mixing_coef + (1 - label_mixing_coef) * img2_labels
 
-        # print(img2_labels_list)
-        ##labels
-        mixed_img_labels = img1_labels * r
-        # print(mixed_img_labels)
-
-        for i, item in enumerate(img2_labels):  # img2_labels is a list
-            if mixed_img_labels[item] == 0:
-                mixed_img_labels[item] = 1 - r
-            else:
-                if (1 - r) + mixed_img_labels[item] <= 1:
-                    # print("checked123")
-                    mixed_img_labels[item] = (1 - r) + mixed_img_labels[item]
-                else:
-                    # print("DID HERE")
-                    mixed_img_labels[item] = 1
-
-        # print(mixed_img_labels)
         return img_mixed, mixed_img_labels
 
     def oversampling(self, ratio=100):
@@ -261,16 +226,17 @@ class TrainProtsDataset(Dataset):
         self.prots_df['Target'] = y
 
     def sample_second_image(self, normalize=False):
+        #np.random.seed(np.uint32(time.time()))
         samples = np.array(pd.DataFrame.sample(self.prots_df,4).values.tolist())
-        img2_path = (samples[:,0]).tolist()
-        img2_name = [path_local +'train/' + img for img in img2_path]
+        img2_path = (samples[:, 0]).tolist()
+        img2_name = [path_local + 'train/' + img for img in img2_path]
         img2 = np.array([np.array([io.imread(img2_name[i] + '_' + color + extension) for color in self.color], dtype=np.uint8) for i in range(4)])
 
         img2_labels = (samples[:,1]).tolist()
         img2_labels_list = [list(map(int, elem.split(" "))) for elem in img2_labels]
 
         if normalize == True:
-            img2 = img2 - np.mean(img2, axis=(1, 2), keepdims=True)
+            img2[0] = np.asarray(img2[0] - np.mean(img2[0], axis=(1, 2), keepdims=True), dtype=np.uint8)
 
         return img2[0], img2_labels_list[0]
 
@@ -291,14 +257,20 @@ class TrainProtsDataset(Dataset):
 
         # data augmentation - comment if undesireable
 
-        img_VC, img_VC_labels = self.data_augVconcat(img, img_labels)# , img2, img2_labels_list)
-        self.show_images(img_VC)
+        img_VC, img_VC_labels = self.data_augVconcat(img, img_labels, normalize=False)# , img2, img2_labels_list)
+        # self.show_images(img_VC)
 
-        img_HC, img_HC_labels = self.data_augHconcat(img, img_labels)  # , img2, img2_labels_list)
-        self.show_images(img_HC)
+        img_HC, img_HC_labels = self.data_augHconcat(img, img_labels, normalize=False)  # , img2, img2_labels_list)
+        # self.show_images(img_HC)
+
+        # img_VC = np.zeros((4,512,512))
+        # img_HC = np.ones((4,512,512))*255
         img_mixed, img_mixed_labels = self.data_Mixup_two_images(img_VC, img_VC_labels, img_HC, img_HC_labels)
         self.show_images(img_mixed)
 
+        #preparing the return
+        img = self.transform(Image.fromarray(np.swapaxes(img_mixed, 0, 2)))
+        img_labels = img_mixed_labels
 
 
         # img_result = np.zeros((len(self.color), 224, 224), dtype=np.float)
@@ -310,9 +282,9 @@ class TrainProtsDataset(Dataset):
         # img = self.transform([Image.fromarray(img[i,:,:]) for i in range(len(self.color))])
         # img = self.transform(Image.fromarray(
         #    np.array(io.imread(img_name + '_' + 'green' + '.png'), dtype=np.uint8)))
-        img = self.transform(Image.fromarray(
-           np.swapaxes(np.array([io.imread(img_name + '_' + color + '.png') for color in self.color], dtype=np.uint8),
-                       0, 2)))
+        # img = self.transform(Image.fromarray(
+        #    np.swapaxes(np.array([io.imread(img_name + '_' + color + '.png') for color in self.color], dtype=np.uint8),
+        #                0, 2)))
 
         # print(img.shape)
 

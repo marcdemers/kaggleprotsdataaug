@@ -115,9 +115,20 @@ class PretrainedApproach:
             transforms.ToTensor(),
             transforms.Normalize([0.08069, 0.05258, 0.05487, 0.08282], [0.13704, 0.10145, 0.15313, 0.13814])])
 
-
-
+        self.batch_size = batch_size
         self.test_df = pd.read_csv('all/sample_submission.csv')
+        self.data_root = data_root
+        self.train_dataset = TrainProtsDataset(self.data_root, self.train_transform, oversample)
+        self.valid_dataset = ValProtsDataset(self.data_root, self.test_transform)
+        self.test_dataset = TestProtsDataset(self.data_root, self.test_transform)
+        self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4,
+                                       pin_memory=True, worker_init_fn=self.worker_init_fcn)
+        self.valid_loader = DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2,
+                                       pin_memory=False)
+        self.test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2,
+                                      pin_memory=False)
+
+
 
         # self.id_string = 'Runs/fl_cos_{}_lr{}_hs{}_bsize{}_oversample{}_flr{}'.format(model, str(lr), str(hidden_size), str(batch_size), oversample, str(focal_loss_ratio))
         self.model = eval(model)().to(device)
@@ -130,8 +141,8 @@ class PretrainedApproach:
         # self.writer = SummaryWriter(self.id_string)
         self.steps = 0
         self.epochs = 0
-        self.batch_size = batch_size
-        self.data_root = data_root
+
+
         # self.load_model()
 
     def load_model(self):
@@ -166,18 +177,11 @@ class PretrainedApproach:
         for _ in tqdm(range(150000)):
             self.epoch_train()
 
-    def epoch_train(self):
-        #intialize new batch for cross validation
-        self.train_dataset = TrainProtsDataset(self.data_root, self.train_transform, oversample)
-        self.valid_dataset = ValProtsDataset(self.data_root, self.test_transform)
-        self.test_dataset = TestProtsDataset(self.data_root, self.test_transform)
-        self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4,
-                                       pin_memory=True)
-        self.valid_loader = DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2,
-                                       pin_memory=False)
-        self.test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2,
-                                      pin_memory=False)
+    def worker_init_fcn(self, worker_id):
+        np.random.seed(np.random.get_state()[1][0] + worker_id)
 
+    def epoch_train(self):
+        np.random.seed()
         for batch_x, batch_y in tqdm(self.train_loader):
             self.train_on_batch(batch_x.to(device), batch_y.to(device))
         print("entering validation run")
@@ -356,7 +360,7 @@ if __name__ == '__main__':
     data_root = './all/'
     model = 'PretrainedResnet50'
     oversample = 100
-    trainer = PretrainedApproach(learning_rate, hidden_size, batch_size, '', model, 0)
+    trainer = PretrainedApproach(learning_rate, hidden_size, batch_size, '', model, oversample)
     # trainer = PretrainedApproach(learning_rate, hidden_size, data_root, model, oversample, batch_size)
     trainer.train_till_convergence()
     # trainprotsdatasetinst=TrainProtsDataset(root_dir='root_dir')

@@ -100,13 +100,13 @@ class PretrainedApproach:
     def __init__(self, lr, hidden_size, batch_size, data_root, model, oversample):
 
         self.train_transform = transforms.Compose([
-            transforms.Resize(224),#336 default
-            # transforms.RandomRotation(30),
-            # transforms.RandomVerticalFlip(),
-            # transforms.RandomHorizontalFlip(),
-            # transforms.RandomAffine(10),
-            # transforms.ColorJitter(brightness=0.5, contrast=.5, saturation=.5),
-            # transforms.RandomResizedCrop(224),
+            transforms.Resize(336),#336 default
+            transforms.RandomRotation(30),
+            transforms.RandomVerticalFlip(),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomAffine(10),
+            transforms.ColorJitter(brightness=0.5, contrast=.5, saturation=.5),
+            transforms.RandomResizedCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.08069, 0.05258, 0.05487, 0.08282], [0.13704, 0.10145, 0.15313, 0.13814])])
 
@@ -135,7 +135,7 @@ class PretrainedApproach:
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5, eta_min=lr / 10)
         self.lr = lr
-        self.criterion = FocalLoss(5)
+        self.criterion = FocalLoss(1)
         self.class_threshold = np.ones(shape=(28,)) - 0.5
 
         # self.writer = SummaryWriter(self.id_string)
@@ -174,7 +174,7 @@ class PretrainedApproach:
             param.requires_grad = True
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr / 10)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=10, eta_min=self.lr / 100)
-        for _ in tqdm(range(150000)):
+        for _ in tqdm(range(50)):
             self.epoch_train()
 
     def worker_init_fcn(self, worker_id):
@@ -187,7 +187,7 @@ class PretrainedApproach:
         print("entering validation run")
         self.validation_run()
         # if self.epochs % 5 == 0:
-        #     self.make_test_predictions()
+        self.make_test_predictions()
         # self.checkpoint_model()
         self.epochs += 1
 
@@ -233,7 +233,8 @@ class PretrainedApproach:
         print(preds)
         real = np.vstack(real)
         print(real)
-        validation_f1_threshold = self.get_f1_score(real, preds)
+        # validation_f1_threshold = self.get_f1_score(real, preds)
+        validation_f1_threshold, validation_f1_50, validation_f1_ratios = self.get_f1_score2(real, preds)
         print(validation_f1_threshold)
         # self.update_class_weights(real, preds)
         # self.writer.add_scalar('Validation loss', np.mean(validation_loss), self.epochs)
@@ -293,6 +294,33 @@ class PretrainedApproach:
         return f1_score(true_y, preds,
                         average='macro')  # _y, preds_50, average='macro'), f1_score(true_y, preds_train_ratio, average='macro')
 
+    def get_f1_score2(self, true_y, true_pred):
+        preds = (true_pred > self.class_threshold).astype(int)
+        preds_50 = (true_pred > 0.5).astype(int)
+        preds_train_ratio = true_pred.copy()
+        for i in range(28):
+            preds_train_ratio[:, i] = (preds_train_ratio[:, i] > np.quantile(preds_train_ratio[:, i],
+                                                                             1 - self.train_dataset.ratios[
+                                                                                 i])).astype(int)
+
+        individual_f1 = {'class': [], 'f1_score_50': [], 'f1_score_train_ratio': [], 'f1_score_threshold': []}
+        for i in range(28):
+            individual_f1['class'].append(i)
+            individual_f1['f1_score_threshold'].append(f1_score(true_y[:, i], preds[:, i]))
+            individual_f1['f1_score_50'].append(f1_score(true_y[:, i], preds_50[:, i]))
+            individual_f1['f1_score_train_ratio'].append(f1_score(true_y[:, i], preds_train_ratio[:, i]))
+        f1_df = pd.DataFrame.from_dict(individual_f1)
+        f1_df.to_csv('valid_f1_class_' + str(self.epochs) + '.csv', index=False)
+        self.update_class_weights(true_y, true_pred)
+        txt_file = open("f1_scores.txt", "a")
+        txt_file.write("epoch {} f1 score threshold {} f1 score 50 {} f1 score train_ratio {} \n".
+                       format(self.epochs, f1_score(true_y, preds, average='macro'), f1_score(true_y, preds_50, average='macro'),
+                                                         f1_score(true_y, preds_train_ratio, average='macro')))
+        txt_file.close()
+        return f1_score(true_y, preds, average='macro'), f1_score(true_y, preds_50, average='macro'), f1_score(true_y,
+                                                                                                           preds_train_ratio,
+                                                                                                           average='macro')
+
     def validate_on_batch(self, batch_x, batch_y):
         self.model.eval()
         preds = self.model(batch_x)
@@ -322,6 +350,23 @@ class PretrainedApproach:
                                                                              1 - self.train_dataset.ratios[i])).astype(
                 int)
 
+        #at least 1 prediction per image
+        for i in range(preds_threshold.shape[0]):
+            if (preds_50[i, :]).sum() == 0:
+                preds_50[i, np.argmax(predictions[i, :])] = int(1)
+            if preds_train_ratio[i, :].sum() == 0:
+                preds_train_ratio[i, np.argmax(predictions[i, :])] = int(1)
+            if preds_threshold[i, :].sum() == 0:
+                preds_threshold[i, np.argmax(predictions[i, :])] = int(1)
+
+        # for i in range(preds_threshold.shape[0]):
+        #     if (preds_50[i, :]).sum() == 0:
+        #         preds_50[-1, (-predictions[-1, :]).argsort()[:2]] = int(1)
+        #     if (preds_train_ratio[i, :]).sum() == 0:
+        #         preds_train_ratio[-1, (-predictions[-1, :]).argsort()[:2]] = int(1)
+        #     if (preds_threshold[i, :]).sum() == 0:
+        #         preds_threshold[-1, (-predictions[-1, :]).argsort()[:2]] = int(1)
+
         preds_threshold_answer = []
         preds_50_answer = []
         preds_train_ratio_answer = []
@@ -342,15 +387,16 @@ class PretrainedApproach:
 
         str_predictions = [' '.join(map(str, p)) for p in preds_threshold_answer]
         self.test_df['Predicted'] = str_predictions
-        self.test_df.to_csv('test_preds_threshold_' + str(self.epochs) + '.csv', index=False)
+        self.test_df.to_csv('results/test_preds_threshold_' + str(self.epochs) + '.csv', index=False)
 
         str_predictions = [' '.join(map(str, p)) for p in preds_50_answer]
         self.test_df['Predicted'] = str_predictions
-        self.test_df.to_csv('test_preds_50_' + str(self.epochs) + '.csv', index=False)
+        self.test_df.to_csv('results/test_preds_50_' + str(self.epochs) + '.csv', index=False)
 
         str_predictions = [' '.join(map(str, p)) for p in preds_train_ratio_answer]
         self.test_df['Predicted'] = str_predictions
-        self.test_df.to_csv('test_preds_train_ratio_' + str(self.epochs) + '.csv', index=False)
+        self.test_df.to_csv('results/test_preds_train_ratio_' + str(self.epochs) + '.csv', index=False)
+
 
 if __name__ == '__main__':
 
@@ -362,6 +408,7 @@ if __name__ == '__main__':
     oversample = 100
     trainer = PretrainedApproach(learning_rate, hidden_size, batch_size, '', model, oversample)
     # trainer = PretrainedApproach(learning_rate, hidden_size, data_root, model, oversample, batch_size)
-    trainer.train_till_convergence()
+    # trainer.train_till_convergence()
+    trainer.finetune()
     # trainprotsdatasetinst=TrainProtsDataset(root_dir='root_dir')
     # trainprotthon explicitly calling init fusdatasetinst.__init__()

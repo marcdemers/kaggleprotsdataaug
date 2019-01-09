@@ -87,38 +87,19 @@ class TrainProtsDataset(Dataset):
         img2, img2_labels = self.sample_second_image(normalize)
         if normalize == True:
             img1 = np.asarray(img1 - np.mean(img1, axis=(1, 2), keepdims=True), dtype=np.uint8)
-
-        # img1, img2 :already numpy array
-        x = np.random.beta(1,1)
+        x = 1#np.random.beta(1,1)
         r = 1 - x
-        # print("r", r)
-        # img1 = img1 - np.mean(img1, axis=(0,1))
-        # img2 = img2 - np.mean(img2, axis=(0,1))
-        # img_mixed =
-        # print(img1.shape[1])
-        # print((img1[:,:int(r*img1.shape[1])]).shape)
-        # print((img2[:,int(r*img2.shape[1]):]).shape)
-        # print(img1[:,1:400].shape[1])
         img_mixed = np.concatenate((img1[:, :, :int(r * img1.shape[2])], img2[:, :, int(r * img2.shape[2]):]), axis=2)
-        # print(img_mixed.shape)
-
-        # print(img1_labels)
-        # print(img2_labels)
 
         mixed_img_labels = img1_labels * r
-        # print(mixed_img_labels)
         for i, item in enumerate(img2_labels):  # img2_labels is a list
             if mixed_img_labels[item] == 0:
                 mixed_img_labels[item] = 1 - r
             else:
                 if (1 - r) + mixed_img_labels[item] <= 1:
-                    # print("checked123")
                     mixed_img_labels[item] = (1 - r) + mixed_img_labels[item]
                 else:
-                    # print("DID HERE")
                     mixed_img_labels[item]
-
-        # print(mixed_img_labels)
 
         return img_mixed, mixed_img_labels
 
@@ -128,24 +109,9 @@ class TrainProtsDataset(Dataset):
         img2, img2_labels = self.sample_second_image(normalize)
         if normalize == True:
             img1 = np.asarray(img1 - np.mean(img1, axis=(1, 2), keepdims=True), dtype=np.uint8)
-        #r is the mixing ratio on the first image ; r=0: only img2, r=1: only img1
-        x = np.random.beta(1, 1)
+        x = 1#np.random.beta(1, 1)
         r=1-x
-        # r=1
-        # print("r", r)
-
-        # img1 = img1 - np.mean(img1, axis=(0,1))
-        # img2 = img2 - np.mean(img2, axis=(0,1))
-        # img_mixed =
-        # print(img1.shape[0])
-        # print((img1[:,:int(r*img1.shape[1]),:]).shape)
-        # print((img2[:,int(r*img2.shape[1]):,:]).shape)
-        # print(img1[:,1:400].shape[1])
         img_mixed = np.concatenate((img1[:, :int(r * img1.shape[1]), :], img2[:, int(r * img2.shape[1]):, :]), axis=1)
-        # print(img_mixed.shape)
-
-        # print(img1_labels)
-        # print(img2_labels)
 
         mixed_img_labels = img1_labels * r
 
@@ -154,12 +120,9 @@ class TrainProtsDataset(Dataset):
                 mixed_img_labels[item] = 1 - r
             else:
                 if (1 - r) + mixed_img_labels[item] <= 1:
-                    # print("checked123")
                     mixed_img_labels[item] = (1 - r) + mixed_img_labels[item]
                 else:
-                    # print("DID HERE")
                     mixed_img_labels[item] = 1
-        # print(mixed_img_labels)
 
         return img_mixed, mixed_img_labels
 
@@ -168,7 +131,6 @@ class TrainProtsDataset(Dataset):
         # with probability r
         r = np.random.beta(0.9, 0.9)
         img_mixed = np.asarray(r * img1 + (1 - r) * img2, dtype=np.uint8)
-        # print(img2_labels_list)
 
         #labels
         mixed_img_labels = img1_labels * r + (1-r) * img2_labels
@@ -176,16 +138,16 @@ class TrainProtsDataset(Dataset):
         return img_mixed, mixed_img_labels
 
     def data_augBC(self, img1, img1_labels, img2, img2_labels):  # mixes image2 into image1
-        ##IMAGES MUST COME NORMALIZED!! (mean substracted)
+        #input images must be mean-substracted before
         # mix the images with BC+
         # with probability p
         r = np.random.beta(1, 1)#uniform for BC+
-
 
         sigma1 = np.std(img1, axis=(1, 2), keepdims=True)
         sigma2 = np.std(img2, axis=(1, 2), keepdims=True)
         p = 1 / (1 + sigma1 * (1 - r) / (sigma2 * r))
         img_mixed = np.asarray( (p * img1 + (1 - p) * img2) / (np.sqrt(p ** 2 + (1 - p) ** 2)) , dtype=np.uint8)
+
         # labels
         label_mixing_coef = np.mean(p)
         mixed_img_labels = img1_labels * label_mixing_coef + (1 - label_mixing_coef) * img2_labels
@@ -226,7 +188,6 @@ class TrainProtsDataset(Dataset):
         self.prots_df['Target'] = y
 
     def sample_second_image(self, normalize=False):
-        #np.random.seed(np.uint32(time.time()))
         samples = np.array(pd.DataFrame.sample(self.prots_df,4).values.tolist())
         img2_path = (samples[:, 0]).tolist()
         img2_name = [path_local + 'train/' + img for img in img2_path]
@@ -246,47 +207,27 @@ class TrainProtsDataset(Dataset):
     def __getitem__(self, idx):
         img_name = path_local+'train/' + self.prots_df.iloc[idx, 0]
         img_labels = self.targets[idx]
-        # channel_filler = np.zeros((224,224), dtype=np.uint8)
+        #sample from uniform distro
+        # Y= np.random.beta(1,1)
+        # # print(Y)
+        # # if Y <= 0.5:
         img = np.array([io.imread(img_name + '_' + color + extension) for color in self.color], dtype=np.uint8)
-        # print(img.shape)
-
-        # normalize = True
-        # if normalize == True:
-        #     img = (img - np.mean(img, axis=(1, 2), keepdims=True)) / np.std(img, axis=(1, 2), keepdims=True)
-
-
-        # data augmentation - comment if undesireable
-
+        #
+        # # data augmentation - comment if undesireable
         img_VC, img_VC_labels = self.data_augVconcat(img, img_labels, normalize=False)# , img2, img2_labels_list)
-        # self.show_images(img_VC)
-
         img_HC, img_HC_labels = self.data_augHconcat(img, img_labels, normalize=False)  # , img2, img2_labels_list)
-        # self.show_images(img_HC)
 
-        # img_VC = np.zeros((4,512,512))
-        # img_HC = np.ones((4,512,512))*255
         img_mixed, img_mixed_labels = self.data_Mixup_two_images(img_VC, img_VC_labels, img_HC, img_HC_labels)
-        self.show_images(img_mixed)
+        # self.show_images(img_mixed)
 
         #preparing the return
         img = self.transform(Image.fromarray(np.swapaxes(img_mixed, 0, 2)))
         img_labels = img_mixed_labels
 
-
-        # img_result = np.zeros((len(self.color), 224, 224), dtype=np.float)
-        # for i in range(len(self.color)):
-        #     img_result[i, 0:224, 0:224] = self.transform(Image.fromarray(img[i, :, :]))
-        #     # print("after transform")
-        # # print(img_result.shape)
-
-        # img = self.transform([Image.fromarray(img[i,:,:]) for i in range(len(self.color))])
-        # img = self.transform(Image.fromarray(
-        #    np.array(io.imread(img_name + '_' + 'green' + '.png'), dtype=np.uint8)))
-        # img = self.transform(Image.fromarray(
-        #    np.swapaxes(np.array([io.imread(img_name + '_' + color + '.png') for color in self.color], dtype=np.uint8),
+        # else:
+        #     img = self.transform(Image.fromarray(
+        #     np.swapaxes(np.array([io.imread(img_name + '_' + color + '.png') for color in self.color], dtype=np.uint8),
         #                0, 2)))
-
-        # print(img.shape)
 
         return img, img_labels
 
@@ -336,10 +277,34 @@ class ValProtsDataset(Dataset):
 
         # img = self.transform(Image.fromarray(
         #    (np.array(io.imread(img_name + '_' + 'green' + extension), dtype=np.uint8))))
+
+        # img_temp = np.array([io.imread(img_name + '_' + color + extension) for color in self.color], dtype=np.uint8)
+        # img = np.asarray( (img_temp - np.mean(img_temp, axis=(1, 2), keepdims=True)/np.std(img_temp, axis=(1, 2), keepdims=True)), dtype=np.uint8)
+        # # self.show_images(img)
+        # img = np.swapaxes(img,0,2)
+        #
+        #
+        # img = self.transform(Image.fromarray(img))
+
         img = self.transform(Image.fromarray(
-            np.swapaxes(np.array([io.imread(img_name + '_' + color + extension) for color in self.color], dtype=np.uint8),
-                        0, 2)))
+            np.swapaxes(
+                np.array([io.imread(img_name + '_' + color + extension) for color in self.color], dtype=np.uint8),
+                0, 2)))
+
+
         return img, img_labels
+
+    def show_images(self, img):
+        red = Image.fromarray(img[0, :, :])
+        green = Image.fromarray(img[1, :, :])
+        blue = Image.fromarray(img[2, :, :])
+        yellow = Image.fromarray(img[3, :, :])
+        rgb = PIL.Image.merge('RGB', (red, green, blue))
+        y = PIL.Image.merge('RGB', (yellow, yellow, PIL.Image.new('L', (yellow.width, yellow.height))))
+        rgby = PIL.ImageChops.add(rgb, y)
+        plt.imshow(np.asarray(rgby))
+        plt.axis('off')
+        plt.show()
 
 
 class TestProtsDataset(Dataset):

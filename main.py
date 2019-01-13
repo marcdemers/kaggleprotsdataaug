@@ -21,6 +21,7 @@ import torch.optim as optim
 from sklearn.metrics import f1_score
 from model import PretrainedResnet50
 import torch.nn.functional as F
+import gc
 
 PATH = './'
 TRAIN = './all/train/'
@@ -136,7 +137,7 @@ class PretrainedApproach:
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5, eta_min=lr / 10)
         self.lr = lr
         self.criterion = FocalLoss(1)
-        self.class_threshold = np.ones(shape=(28,)) - 0.5
+        self.class_threshold = np.ones(shape=(28,)) - 0.8
 
         # self.writer = SummaryWriter(self.id_string)
         self.steps = 0
@@ -174,8 +175,9 @@ class PretrainedApproach:
             param.requires_grad = True
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr / 10)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=10, eta_min=self.lr / 100)
-        for _ in tqdm(range(50)):
+        for _ in tqdm(range(75)):
             self.epoch_train()
+        # self.output_csv()
 
     def worker_init_fcn(self, worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
@@ -192,6 +194,7 @@ class PretrainedApproach:
         self.epochs += 1
 
     def output_csv(self):
+
         train_features, train_targets = [], []
         test_features = []
         with torch.no_grad():
@@ -201,16 +204,21 @@ class PretrainedApproach:
                 train_features.append(preds.cpu().numpy())
                 train_targets.append(batch_y.cpu().numpy())
 
+        train_features = np.vstack(train_features)
+        train_targets = np.vstack(train_targets)
+        np.save('results/Train_x.npy', train_features)
+        np.save('results/Train_y.npy', train_targets)
+        del train_features
+        del train_targets
+        gc.collect()
+        with torch.no_grad():
             for batch_x in self.test_loader:
                 preds = self.model.pretrained(batch_x.to(device))
                 test_features.append(preds.cpu().numpy())
 
-        train_features = np.vstack(train_features)
-        train_targets = np.vstack(train_targets)
         test_features = np.vstack(test_features)
-        np.save('Train_x.npy', train_features)
-        np.save('Train_y.npy', train_targets)
         np.save('Test_x.npy', test_features)
+
 
     # custom function
     def sigmoid(self, x):
@@ -288,7 +296,7 @@ class PretrainedApproach:
         #f1_df.to_csv('valid_f1_class_' + str(self.epochs) + '.csv', index=False)
         # self.update_class_weights(true_y, true_pred)
         print(f1_score(true_y, preds, average='macro'))
-        txt_file = open("f1_scores.txt", "a")
+        txt_file = open("f1_scores_postExp.txt", "a")
         txt_file.write("epoch {} macro f1 score {} \n".format(self.epochs, f1_score(true_y, preds, average='macro')))
         txt_file.close()
         return f1_score(true_y, preds,

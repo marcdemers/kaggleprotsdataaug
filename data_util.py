@@ -38,34 +38,34 @@ class TrainProtsDataset(Dataset):
                 on a sample.
         """
         self.prots_df = pd.read_csv(path_local + 'train.csv')
-        percent = 0.8  # default .95
+        percent = 1 # 0.8  # default .95
         train = Counter()
         for i, ii in self.prots_df.iterrows():
             train.update(ii['Target'].split())
 
-        good_val = False
-        idx = 0
-        while good_val is False:
-            idx += 1
-            good_val = True
-            self.prots_df = self.prots_df.sample(frac=1)
-            self.validation_df = self.prots_df[int(percent * len(self.prots_df)):]
-            val = Counter()
-            for i, ii in self.validation_df.iterrows():
-
-                val.update(ii['Target'].split())
-
-            for i in range(28):
-                if val[str(i)] == 0:
-                    good_val = False
-                val_ratio = val[str(i)] / len(self.validation_df)
-                train_ratio = train[str(i)] / int(percent * len(self.prots_df))
-
-                if ((1 / 1.75) < val_ratio / train_ratio < 1.75) is False:
-                    good_val = False
-                # print(val_ratio / train_ratio, (1 / 1.75) < val_ratio / train_ratio < 1.75, good_val)
-
-        self.validation_df.to_csv('validation.csv', index=False)
+        # good_val = False
+        # idx = 0
+        # while good_val is False:
+        #     idx += 1
+        #     good_val = True
+        #     self.prots_df = self.prots_df.sample(frac=1)
+        #     self.validation_df = self.prots_df[int(percent * len(self.prots_df)):]
+        #     val = Counter()
+        #     for i, ii in self.validation_df.iterrows():
+        #
+        #         val.update(ii['Target'].split())
+        #
+        #     for i in range(28):
+        #         if val[str(i)] == 0:
+        #             good_val = False
+        #         val_ratio = val[str(i)] / len(self.validation_df)
+        #         train_ratio = train[str(i)] / int(percent * len(self.prots_df))
+        #
+        #         if ((1 / 1.75) < val_ratio / train_ratio < 1.75) is False:
+        #             good_val = False
+        #         # print(val_ratio / train_ratio, (1 / 1.75) < val_ratio / train_ratio < 1.75, good_val)
+        #
+        # self.validation_df.to_csv('validation.csv', index=False)
         self.prots_df = self.prots_df[:int(percent * len(self.prots_df))]
 
         self.oversampling(oversampling)
